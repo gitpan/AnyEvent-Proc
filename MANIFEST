@@ -15,6 +15,7 @@ t/003-finish.t
 t/004-timeout.t
 t/005-to_scalar.t
 t/006-pipe.t
+t/007-run.t
 t/release-cpan-changes.t
 t/release-pod-coverage.t
 t/release-pod-syntax.t

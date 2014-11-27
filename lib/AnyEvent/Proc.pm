@@ -7,10 +7,13 @@ use AnyEvent;
 use AnyEvent::Handle;
 use AnyEvent::Util ();
 use Try::Tiny;
+use Exporter qw(import);
 use POSIX;
 
-our $VERSION = '0.1.0'; # VERSION
+our $VERSION = '0.101'; # VERSION
 
+
+our @EXPORT_OK = qw(run);
 
 sub _rpipe(&) {
 	my $on_eof = shift;
@@ -112,12 +115,12 @@ sub _run_cmd($$$$$) {
         AnyEvent::Util::close_all_fds_except 0, 1, 2;
  
 		my $bin = $cmd->[0];
- 
+
 		no warnings;
 
 		exec { $bin } @$cmd;
 
-		exit 126;
+		POSIX::_exit (126);
 	}
  
 	$$pidref = $pid;
@@ -132,7 +135,11 @@ sub _run_cmd($$$$$) {
 	my $cw;
 	$cw = AE::child $pid => sub {
 		$status = $_[1] >> 8;
-		AE::log warn => "child exited with status $status" if $status;
+		my $signal = $_[1] & 127;
+		my $coredump = $_[1] & 128;
+		AE::log info => "child exited with status $status" if $status;
+		AE::log debug => "child exited with signal $signal" if $signal;
+		AE::log note => "child exited with coredump" if $coredump;
 		undef $cw;
 		$cv->end;
 	};
@@ -239,7 +246,7 @@ sub new($%) {
 	
 	if ($options{outstr}) {
 		my $sref = delete $options{outstr};
-			$$sref = '';
+		$$sref = '';
 		$self->pipe(out => $sref);
 	}
 	
@@ -263,6 +270,21 @@ sub new($%) {
 	$self;
 }
 
+
+sub run($@) {
+	my ($bin, @args) = @_;
+	my ($out, $err) = ('', '');
+	my $proc = __PACKAGE__->new(bin => $bin, args => \@args, outstr => \$out, errstr => \$err);
+	$proc->finish;
+	$? = $proc->wait << 8;
+	if (wantarray) {
+		return ($out, $err);
+	} else {
+		warn $err if $err;
+		return $out;
+	}
+}
+
 sub _on {
 	my ($self, $name, $handler) = @_;
 	$self->{listeners}->{$name} = $handler;
@@ -282,6 +304,7 @@ sub _reol { shift->{reol} }
 
 sub _emit($$@) {
 	my ($self, $name, @args) = @_;
+	AE::log debug => "trapped $name";
 	if (exists $self->{listeners}->{$name} and defined $self->{listeners}->{$name}) {
 		$self->{listeners}->{$name}->($self, @args);
 	}
@@ -295,7 +318,7 @@ sub pid($) {
 
 sub fire($;$) {
 	my ($self, $signal) = @_;
-	$signal = 'INT' unless defined $signal;
+	$signal = 'TERM' unless defined $signal;
 	kill uc $signal => $self->pid;
 	$self;
 }
@@ -310,7 +333,7 @@ sub kill($) {
 sub fire_and_kill($$;$) {
 	my $self = shift;
 	my $time = pop;
-	my $signal = uc (pop || 'INT');
+	my $signal = uc (pop || 'TERM');
 	my $w = AnyEvent->timer(after => $time, cb => sub {
 		return unless $self->alive;
 		$self->kill;
@@ -414,6 +437,10 @@ sub pipe($$;$) {
 			$sub = sub {
 				$peer->push_write(shift)
 			}
+		} elsif ($peer->isa('Coro::Channel')) {
+			$sub = sub {
+				$peer->put(shift)
+			}
 		} elsif ($peer->can('print')) {
 			$sub = sub {
 				$peer->print(shift)
@@ -421,12 +448,15 @@ sub pipe($$;$) {
 		}
 	} elsif (ref $peer eq 'SCALAR') {
 		$sub = sub {
-			$$peer .= shift
+			local $_ = shift;
+			$$peer .= $_;
 		}
 	} elsif (ref $peer eq 'GLOB') {
 		$sub = sub {
 			print $peer shift();
 		}
+	} elsif (ref $peer eq 'CODE') {
+		$sub = $peer
 	}
 	if ($sub) {
 		$self->$what->on_read(sub {
@@ -434,6 +464,8 @@ sub pipe($$;$) {
 			$_[0]->rbuf = '';
 			$sub->($_);
 		})
+	} else {
+		AE::log fatal => "cannot handle $peer for $what";
 	}
 }
 
@@ -640,6 +672,12 @@ sub readline_error($) {
 	shift->readline_error_cv->recv
 }
 
+# AnyEvent::Impl::Perl has some issues with POSIX::dup.
+# This statement solves the problem.
+AnyEvent::post_detect {
+	AE::child $$ => sub {};
+};
+
 1;
 
 __END__
@@ -652,7 +690,11 @@ AnyEvent::Proc - Run external commands
 
 =head1 VERSION
 
-version 0.1.0
+version 0.101
+
+=head1 DESCRIPTION
+
+AnyEvent::Proc is a L<AnyEvent>-based helper class for running external commands with full control over STDIN, STDOUT and STDERR.
 
 =head1 SYNOPSIS
 
@@ -744,6 +786,10 @@ Callback handler called when STDERR read inactivity I<etimeout> value exceeds
 
 Returns a L<AnyEvent::Handle> for STDIN
 
+Useful for piping data into us:
+
+	$socket->print($proc->in->fh)
+
 =head2 out()
 
 Returns a L<AnyEvent::Handle> for STDOUT
@@ -758,7 +804,7 @@ Returns the PID of the subprocess
 
 =head2 fire([$signal])
 
-Sends a named signal to the subprocess. C<$signal> defaults to I<INT> if omitted.
+Sends a named signal to the subprocess. C<$signal> defaults to I<TERM> if omitted.
 
 =head2 kill()
 
@@ -768,7 +814,7 @@ Kills the subprocess the most brutal way. Equals to
 
 =head2 fire_and_kill([$signal, ]$time)
 
-Fires specified signal C<$signal> (or I<INT> if omitted) and after C<$time> seconds kills the subprocess.
+Fires specified signal C<$signal> (or I<TERM> if omitted) and after C<$time> seconds kills the subprocess.
 
 This is a synchronous call. After this call, the subprocess can be considered to be dead.
 
@@ -832,7 +878,7 @@ Queues one or more line to be written.
 
 =head2 pipe([$fd, ]$peer)
 
-Pipes any output of STDOUT to another handle. C<$peer> maybe another L<AnyEvent::Proc> instance, an L<AnyEvent::Handle>, an object that implements the I<print> method, a ScalarRef or a GlobRef.
+Pipes any output of STDOUT to another handle. C<$peer> maybe another L<AnyEvent::Proc> instance, an L<AnyEvent::Handle>, a L<Coro::Channel>, an object that implements the I<print> method, a ScalarRef or a GlobRef or a CodeRef.
 
 C<$fd> defaults to I<stdout>.
 
@@ -889,6 +935,32 @@ Bevahes equivalent as I<readlines_ch>, but for STDERR.
 =head2 readline_error()
 
 Bevahes equivalent as I<readline>, but for STDERR.
+
+=head1 FUNCTIONS
+
+=head2 run($bin[, @args])
+
+Bevahes similar to L<perlfunc/system>. In scalar context, it returns STDOUT of the subprocess. STDERR will be passed-through by L<perlfunc/warn>.
+
+	$out = AnyEvent::Proc::run(...)
+
+In list context, STDOUT and STDERR will be separately returned.
+
+	($out, $err) = AnyEvent::Proc::run(...)
+
+The exit-code is stored in C<$?>. Please keep in mind that for portability reasons C<$?> is shifted by 8 bits.
+
+	$exitcode = $? >> 8
+
+=head1 EXPORTS
+
+Nothing by default. The following functions will be exported on request:
+
+=over 4
+
+=item * L</run>
+
+=back
 
 =head1 BUGS
 
