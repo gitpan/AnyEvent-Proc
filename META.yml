@@ -3,9 +3,12 @@ abstract: 'Run external commands'
 author:
   - 'David Zurborg <zurborg@cpan.org>'
 build_requires:
+  IO::Pipe: '0'
   Test::Most: '0'
+  perl: '5.006'
 configure_requires:
   ExtUtils::MakeMaker: '0'
+  perl: '5.006'
 dynamic_config: 0
 generated_by: 'Dist::Zilla version 5.025, CPAN::Meta::Converter version 2.143240'
 license: open_source
@@ -17,17 +20,20 @@ requires:
   AnyEvent: '0'
   AnyEvent::Handle: '0'
   AnyEvent::Util: '0'
+  Coro: '0'
   Coro::Channel: '0'
   Exporter: '0'
   POSIX: '0'
   Scalar::Util: '0'
   Try::Tiny: '0'
+  overload: '0'
+  perl: '5.006'
   strict: '0'
   warnings: '0'
 resources:
   bugtracker: https://github.com/zurborg/libanyevent-proc-perl/issues
   homepage: https://github.com/zurborg/libanyevent-proc-perl
   repository: https://github.com/zurborg/libanyevent-proc-perl.git
-version: '0.101'
+version: '0.102'
 x_contributors:
   - 'David Zurborg <zuborg@cpan.org>'

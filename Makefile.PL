@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-
+use 5.006;
 
 use ExtUtils::MakeMaker;
 
@@ -18,23 +18,27 @@ my %WriteMakefileArgs = (
   "DISTNAME" => "AnyEvent-Proc",
   "EXE_FILES" => [],
   "LICENSE" => "open_source",
+  "MIN_PERL_VERSION" => "5.006",
   "NAME" => "AnyEvent::Proc",
   "PREREQ_PM" => {
     "AnyEvent" => 0,
     "AnyEvent::Handle" => 0,
     "AnyEvent::Util" => 0,
+    "Coro" => 0,
     "Coro::Channel" => 0,
     "Exporter" => 0,
     "POSIX" => 0,
     "Scalar::Util" => 0,
     "Try::Tiny" => 0,
+    "overload" => 0,
     "strict" => 0,
     "warnings" => 0
   },
   "TEST_REQUIRES" => {
+    "IO::Pipe" => 0,
     "Test::Most" => 0
   },
-  "VERSION" => "0.101",
+  "VERSION" => "0.102",
   "test" => {
     "TESTS" => "t/*.t"
   }
@@ -45,13 +49,16 @@ my %FallbackPrereqs = (
   "AnyEvent" => 0,
   "AnyEvent::Handle" => 0,
   "AnyEvent::Util" => 0,
+  "Coro" => 0,
   "Coro::Channel" => 0,
   "Exporter" => 0,
   "ExtUtils::MakeMaker" => 0,
+  "IO::Pipe" => 0,
   "POSIX" => 0,
   "Scalar::Util" => 0,
   "Test::Most" => 0,
   "Try::Tiny" => 0,
+  "overload" => 0,
   "strict" => 0,
   "warnings" => 0
 );

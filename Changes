@@ -1,5 +1,11 @@
 Revision history for AnyEvent-Proc
 
+0.102 2014-12-04
+ - new method "pull"
+ - remove subroutine prototypes
+ - allow additional descriptors via new functions reader() and writer()
+ - tidy up code
+
 0.101 2014-11-27
  - new function "run"
  - update tests
@@ -9,12 +15,6 @@ Revision history for AnyEvent-Proc
  - fix issue with AnyEvent::Impl::Perl
  - improve tests
 
-0.100 2014-11-26
- - change version format
-
-0.1.0 2014-11-26
- - first release
-
  [API CHANGES]
 
  [BUG FIXES]
@@ -22,4 +22,10 @@ Revision history for AnyEvent-Proc
  [DOCUMENTATION]
 
  [ENHANCEMENTS]
+
+0.100 2014-11-26
+ - change version format
+
+0.1.0 2014-11-26
+ - first release
 

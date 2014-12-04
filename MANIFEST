@@ -6,6 +6,7 @@ MANIFEST
 META.yml
 Makefile.PL
 README
+SIGNATURE
 dist.ini
 lib/AnyEvent/Proc.pm
 t/000-simple.t
@@ -16,6 +17,10 @@ t/004-timeout.t
 t/005-to_scalar.t
 t/006-pipe.t
 t/007-run.t
+t/008-pull.t
+t/009-extrafd.t
+t/author-critic.t
 t/release-cpan-changes.t
+t/release-kwalitee.t
 t/release-pod-coverage.t
 t/release-pod-syntax.t
