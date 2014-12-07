@@ -25,6 +25,7 @@ requires:
   Exporter: '0'
   POSIX: '0'
   Scalar::Util: '0'
+  Tie::Scalar: '0'
   Try::Tiny: '0'
   overload: '0'
   perl: '5.006'
@@ -34,6 +35,6 @@ resources:
   bugtracker: https://github.com/zurborg/libanyevent-proc-perl/issues
   homepage: https://github.com/zurborg/libanyevent-proc-perl
   repository: https://github.com/zurborg/libanyevent-proc-perl.git
-version: '0.102'
+version: '0.103'
 x_contributors:
   - 'David Zurborg <zuborg@cpan.org>'

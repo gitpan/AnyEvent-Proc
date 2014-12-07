@@ -29,6 +29,7 @@ my %WriteMakefileArgs = (
     "Exporter" => 0,
     "POSIX" => 0,
     "Scalar::Util" => 0,
+    "Tie::Scalar" => 0,
     "Try::Tiny" => 0,
     "overload" => 0,
     "strict" => 0,
@@ -38,7 +39,7 @@ my %WriteMakefileArgs = (
     "IO::Pipe" => 0,
     "Test::Most" => 0
   },
-  "VERSION" => "0.102",
+  "VERSION" => "0.103",
   "test" => {
     "TESTS" => "t/*.t"
   }
@@ -57,6 +58,7 @@ my %FallbackPrereqs = (
   "POSIX" => 0,
   "Scalar::Util" => 0,
   "Test::Most" => 0,
+  "Tie::Scalar" => 0,
   "Try::Tiny" => 0,
   "overload" => 0,
   "strict" => 0,
