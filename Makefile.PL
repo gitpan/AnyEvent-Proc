@@ -24,8 +24,8 @@ my %WriteMakefileArgs = (
     "AnyEvent" => 0,
     "AnyEvent::Handle" => 0,
     "AnyEvent::Util" => 0,
-    "Coro" => 0,
-    "Coro::Channel" => 0,
+    "Carp" => 0,
+    "Class::Load" => 0,
     "Exporter" => 0,
     "POSIX" => 0,
     "Scalar::Util" => 0,
@@ -36,10 +36,11 @@ my %WriteMakefileArgs = (
     "warnings" => 0
   },
   "TEST_REQUIRES" => {
+    "Env::Path" => 0,
     "IO::Pipe" => 0,
     "Test::Most" => 0
   },
-  "VERSION" => "0.103",
+  "VERSION" => "0.104",
   "test" => {
     "TESTS" => "t/*.t"
   }
@@ -50,8 +51,9 @@ my %FallbackPrereqs = (
   "AnyEvent" => 0,
   "AnyEvent::Handle" => 0,
   "AnyEvent::Util" => 0,
-  "Coro" => 0,
-  "Coro::Channel" => 0,
+  "Carp" => 0,
+  "Class::Load" => 0,
+  "Env::Path" => 0,
   "Exporter" => 0,
   "ExtUtils::MakeMaker" => 0,
   "IO::Pipe" => 0,

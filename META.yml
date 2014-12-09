@@ -3,6 +3,7 @@ abstract: 'Run external commands'
 author:
   - 'David Zurborg <zurborg@cpan.org>'
 build_requires:
+  Env::Path: '0'
   IO::Pipe: '0'
   Test::Most: '0'
   perl: '5.006'
@@ -20,8 +21,8 @@ requires:
   AnyEvent: '0'
   AnyEvent::Handle: '0'
   AnyEvent::Util: '0'
-  Coro: '0'
-  Coro::Channel: '0'
+  Carp: '0'
+  Class::Load: '0'
   Exporter: '0'
   POSIX: '0'
   Scalar::Util: '0'
@@ -35,6 +36,6 @@ resources:
   bugtracker: https://github.com/zurborg/libanyevent-proc-perl/issues
   homepage: https://github.com/zurborg/libanyevent-proc-perl
   repository: https://github.com/zurborg/libanyevent-proc-perl.git
-version: '0.103'
+version: '0.104'
 x_contributors:
   - 'David Zurborg <zuborg@cpan.org>'

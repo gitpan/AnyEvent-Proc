@@ -9,17 +9,17 @@ use AnyEvent;
 use AnyEvent::Handle;
 use AnyEvent::Util ();
 use Try::Tiny;
+use Class::Load;
 use Exporter qw(import);
+use Carp;
 use POSIX;
 
-our $VERSION = '0.103';    # VERSION
+our $VERSION = '0.104';    # VERSION
 
 our @EXPORT_OK = qw(run run_cb reader writer);
 
 sub _rpipe {
-    my $on_eof = shift;
     my ( $R, $W ) = AnyEvent::Util::portable_pipe;
-    my $cv = AE::cv;
     (
         $R,
         AnyEvent::Handle->new(
@@ -27,30 +27,22 @@ sub _rpipe {
             on_error => sub {
                 my ( $handle, $fatal, $message ) = @_;
                 AE::log warn => "error writing to handle: $message";
-                $cv->send($message);
             },
-            on_eof => $on_eof,
         ),
-        $cv,
     );
 }
 
 sub _wpipe {
-    my $on_eof = shift;
     my ( $R, $W ) = AnyEvent::Util::portable_pipe;
-    my $cv = AE::cv;
     (
         AnyEvent::Handle->new(
             fh       => $R,
             on_error => sub {
                 my ( $handle, $fatal, $message ) = @_;
                 AE::log warn => "error reading from handle: $message";
-                $cv->send($message);
             },
-            on_eof => $on_eof,
         ),
         $W,
-        $cv,
     );
 }
 
@@ -149,25 +141,17 @@ sub _run_cmd {
 
     $$pidref = $pid;
 
-    %redir = ();        # close child side of the fds
-
-    my $status;
-    $cv->begin(
-        sub {
-            shift->send($status);
-        }
-    );
-
-    my $cw;
-    $cw = AE::child $pid => sub {
-        $status = $_[1] >> 8;
+    my $w;
+    $w = AE::child $pid => sub {
+        my $status   = $_[1] >> 8;
         my $signal   = $_[1] & 127;
         my $coredump = $_[1] & 128;
         AE::log info  => "child exited with status $status" if $status;
         AE::log debug => "child exited with signal $signal" if $signal;
         AE::log note  => "child exited with coredump"       if $coredump;
-        undef $cw;
-        $cv->end;
+        undef $w;
+        map { close $_ } values %redir;
+        $cv->send($status);
     };
 
     $cv;
@@ -178,13 +162,9 @@ sub new {
 
     $options{args} ||= [];
 
-    my $eof_in;
-    my $eof_out;
-    my $eof_err;
-
-    my ( $rIN,  $wIN,  $cvIN )  = _rpipe sub { $$eof_in->(@_) };
-    my ( $rOUT, $wOUT, $cvOUT ) = _wpipe sub { $$eof_out->(@_) };
-    my ( $rERR, $wERR, $cvERR ) = _wpipe sub { $$eof_err->(@_) };
+    my ( $rIN,  $wIN )  = _rpipe;
+    my ( $rOUT, $wOUT ) = _wpipe;
+    my ( $rERR, $wERR ) = _wpipe;
 
     my @xhs = @{ delete( $options{extras} ) || [] };
 
@@ -200,6 +180,7 @@ sub new {
     );
 
     my $cv = _run_cmd( [ delete $options{bin} => @args ], \%redir, \$pid );
+    my $waiter = AE::cv;
 
     my $self = bless {
         handles => {
@@ -212,14 +193,11 @@ sub new {
         listeners => {
             exit       => delete $options{on_exit},
             ttl_exceed => delete $options{on_ttl_exceed},
-
-            #eof_stdin  => delete $options{on_eof_stdin},
-            #eof_stdout => delete $options{on_eof_stdout},
-            #eof_stderr => delete $options{on_eof_stderr},
         },
         eol     => "\n",
         cv      => $cv,
         alive   => 1,
+        waiter  => $waiter,
         waiters => {
             in  => [],
             out => [],
@@ -237,9 +215,8 @@ sub new {
         $self->{reol} = delete $options{reol} || qr{$eol};
     }
 
-    my $w;
     if ( $options{ttl} ) {
-        $w = AnyEvent->timer(
+        $self->{timer} = AnyEvent->timer(
             after => delete $options{ttl},
             cb    => sub {
                 return unless $self->alive;
@@ -300,20 +277,14 @@ sub new {
         $self->pipe( out => $sref );
     }
 
-    $cvIN->cb( $self->_reaper( $self->{waiters}->{in} ) );
-    $cvOUT->cb( $self->_reaper( $self->{waiters}->{out} ) );
-    $cvERR->cb( $self->_reaper( $self->{waiters}->{err} ) );
-    map { $_->{cv}->cb( $self->_reaper( $self->{waiters}->{"$_"} ) ) } @xhs;
-
-    $$eof_in  = sub { $self->_emit( eof_stdin  => @_ ); };
-    $$eof_out = sub { $self->_emit( eof_stdout => @_ ); };
-    $$eof_err = sub { $self->_emit( eof_stderr => @_ ); };
-
+    $waiter->begin;
     $cv->cb(
         sub {
-            $self->{alive} = 0;
-            undef $w;
-            $self->_emit( exit => shift->recv );
+            $self->{status} = shift->recv;
+            $self->{alive}  = 0;
+            undef $self->{timer};
+            $waiter->end;
+            $self->_emit( exit => $self->{status} );
         }
     );
 
@@ -326,26 +297,20 @@ sub new {
 }
 
 sub reader {
-    my $eof = sub { };
-    my ( $r, $w, $cv ) = _wpipe sub { $$eof->(@_) };
+    my ( $r, $w ) = _wpipe;
     bless {
         r      => $r,
         w      => $w,
-        eof    => $eof,
-        cv     => $cv,
         fileno => fileno( $r->fh )
       } => __PACKAGE__
       . '::R';
 }
 
 sub writer {
-    my $eof = sub { };
-    my ( $r, $w, $cv ) = _rpipe sub { $$eof->(@_) };
+    my ( $r, $w ) = _rpipe;
     bless {
         r      => $r,
         w      => $w,
-        eof    => $eof,
-        cv     => $cv,
         fileno => fileno( $w->fh )
       } => __PACKAGE__
       . '::W';
@@ -358,7 +323,7 @@ sub run {
         sub {
             $cv->send( \@_ );
         }
-    );
+    )->recv;
     my ( $out, $err, $status ) = @{ $cv->recv };
     $? = $status << 8;
     if (wantarray) {
@@ -384,7 +349,7 @@ sub run_cb {
     $proc->finish;
     $proc->wait(
         sub {
-            my $status = shift;
+            my $status = $proc->{status};
             $? = $status << 8;
             $cb->( $out, $err, $status );
         }
@@ -426,8 +391,9 @@ sub pid {
 sub fire {
     my ( $self, $signal ) = @_;
     $signal = 'TERM' unless defined $signal;
+    $signal =~ s{^sig}{}i;
+    AE::log debug   => "fire SIG$signal";
     kill uc $signal => $self->pid;
-    $self;
 }
 
 sub kill {
@@ -471,26 +437,24 @@ sub alive {
 
 sub wait {
     my ( $self, $cb ) = @_;
+
     my $next = sub {
-        my $status = $self->{cv}->recv;
+        my $cv = shift;
+        $cv->recv;
         waitpid $self->{pid} => 0;
+        $cb->( $self->{status} ) if ref $cb eq 'CODE';
         $self->end;
-        $status;
+        $self->{status};
     };
+    AE::log debug => "waiting for "
+      . ( $self->{waiter}->{_ae_counter} ) . " ends";
     if ($cb) {
-        my $old_cb = $self->{cv}->cb || sub { };
-        my $cv = AE::cv;
-        $self->{cv}->cb(
-            sub {
-                $old_cb->(@_);
-                my $status = $next->();
-                $cv->send( $cb->($status) );
-            }
-        );
-        return $cv;
+        $self->{waiter}->cb($next);
+        return $self->{waiter};
     }
     else {
-        return $next->();
+        $self->{waiter}->recv;
+        return $next->( $self->{waiter} );
     }
 }
 
@@ -597,15 +561,26 @@ sub pipe {
         $sub = $peer;
     }
     if ($sub) {
-        _on_read_helper( $self->_geth($what), $sub );
+        AE::log debug => "pipe $peer from $what";
+        my $aeh = $self->_geth($what);
+        $aeh->on_eof(
+            sub {
+                AE::log debug => "eof: $what";
+                $self->{waiter}->end;
+            }
+        );
+        $self->{output}->{$what} = _on_read_helper( $aeh, $sub );
+        $self->{waiter}->begin;
     }
     else {
-        AE::log fatal => "cannot handle $peer for $what";
+        AE::log fatal => "cannot pipe $peer from $what";
     }
 }
 
 sub pull {
     my ( $self, $peer ) = @_;
+    $self->{input} = $peer;
+    AE::log debug => "pull $peer to stdin";
     use Scalar::Util qw(blessed);
     my $sub;
     if ( blessed $peer) {
@@ -615,22 +590,20 @@ sub pull {
         elsif ( $peer->isa('AnyEvent::Handle') ) {
             $peer->on_eof(
                 sub {
-                    AE::log debug => "$peer->on_eof";
+                    AE::log debug => "pull($peer)->on_eof";
                     $self->finish;
-                    shift->destroy;
                 }
             );
             $peer->on_error(
                 sub {
-                    AE::log error => "$peer: " . $_[2];
-                    $self->finish;
+                    AE::log error => "pull($peer)->on_error(" . $_[2] . ")";
                     shift->destroy;
                 }
             );
             return _on_read_helper(
                 $peer,
                 sub {
-                    AE::log debug => "$peer->on_read";
+                    AE::log debug => "pull($peer)->on_read";
                     $self->write( shift() );
                 }
             );
@@ -639,20 +612,24 @@ sub pull {
             return $self->pull( AnyEvent::Handle->new( fh => $peer ) );
         }
         elsif ( $peer->isa('Coro::Channel') ) {
-            require Coro;
-            return Coro::async {
-                while ( my $x = $peer->get ) {
-                    $self->write($x) or last;
-                    Coro::cede();
-                }
-            };
+            if ( my $class = load_class('Coro') ) {
+                return $class->new(
+                    sub {
+                        while ( my $x = $peer->get ) {
+                            $self->write($x) or last;
+                            Coro::cede();
+                        }
+                        $self->finish;
+                    }
+                );
+            }
         }
     }
     elsif ( ref $peer eq 'SCALAR' ) {
         return _read_on_scalar(
             $peer,
             sub {
-                AE::log debug => "$peer->STORE";
+                AE::log debug => "pull($peer)->STORE";
                 $self->write( shift() );
             }
         );
@@ -660,7 +637,7 @@ sub pull {
     elsif ( ref $peer eq 'GLOB' ) {
         return $self->pull( AnyEvent::Handle->new( fh => $peer ) );
     }
-    AE::log fatal => "cannot handle $peer for stdin";
+    AE::log fatal => "cannot pull $peer to stdin";
 }
 
 sub _push_read {
@@ -731,8 +708,9 @@ sub _readline_cv {
 sub _readline_ch {
     my ( $self, $what, $channel ) = @_;
     unless ($channel) {
-        require Coro::Channel;
-        $channel ||= Coro::Channel->new;
+        if ( my $class = load_class('Coro::Channel') ) {
+            $channel ||= $class->new;
+        }
     }
     $self->_push_waiter( $what => $channel );
     $channel->shutdown unless $self->_readline( $what => _sub_ch($channel) );
@@ -752,8 +730,9 @@ sub _readlines_cb {
 sub _readlines_ch {
     my ( $self, $what, $channel ) = @_;
     unless ($channel) {
-        require Coro::Channel;
-        $channel ||= Coro::Channel->new;
+        if ( my $class = load_class('Coro::Channel') ) {
+            $channel ||= $class->new;
+        }
     }
     $self->_push_waiter( $what => $channel );
     $channel->shutdown unless $self->_geth($what)->on_read(
@@ -781,8 +760,9 @@ sub _readchunk_cv {
 sub _readchunk_ch {
     my ( $self, $what, $bytes, $channel ) = @_;
     unless ($channel) {
-        require Coro::Channel;
-        $channel ||= Coro::Channel->new;
+        if ( my $class = load_class('Coro::Channel') ) {
+            $channel ||= $class->new;
+        }
     }
     $self->_push_waiter( $what => $channel );
     $channel->shutdown unless $self->_readline( $what => _sub_ch($channel) );
@@ -792,8 +772,9 @@ sub _readchunk_ch {
 sub _readchunks_ch {
     my ( $self, $what, $bytes, $channel ) = @_;
     unless ($channel) {
-        require Coro::Channel;
-        $channel ||= Coro::Channel->new;
+        if ( my $class = load_class('Coro::Channel') ) {
+            $channel ||= $class->new;
+        }
     }
     $self->_push_waiter( $what => $channel );
     $channel->shutdown unless $self->_geth($what)->on_read(
@@ -999,7 +980,7 @@ AnyEvent::Proc - Run external commands
 
 =head1 VERSION
 
-version 0.103
+version 0.104
 
 =head1 SYNOPSIS
 
@@ -1139,9 +1120,9 @@ In fact, the method equals to
 
 =head2 wait([$callback])
 
-Waits for the subprocess to be finished call the callback with the exit code. Returns a condvar, sended with the result of the callback.
+Waits for the subprocess to be finished call the callback with the exit code. Returns a condvar.
 
-Without callback, this is a synchronous call returning the exit code.
+Without callback, this is a synchronous call directly returning the exit code.
 
 =head2 finish()
 
@@ -1271,7 +1252,7 @@ Creates a new file descriptor for pulling data from process.
 	$proc->wait;
 	# $out contains now 'hi'
 
-This calls C</bin/sh -c "echo hi >&3">, so that any output will be dupped into fd #3.
+This calls C<< /bin/sh -c "echo hi >&3" >>, so that any output will be dupped into fd #3.
 
 C<$reader> provides following methods:
 
@@ -1352,12 +1333,16 @@ The exit-code is stored in C<$?>. Please keep in mind that for portability reaso
 
 =head2 run_cb($bin[, @args], $callback)
 
-Like L</run>, but asynchronous will callback. Returns the condvar. See L</wait> for more information.
+Like L</run>, but asynchronous with callback handler. Returns the condvar. See L</wait> for more information.
 
 	AnyEvent::Proc::run_cb($bin, @args, sub {
-		my ($out, $err) = @_;
+		my ($out, $err, $status) = @_;
 		...;
 	});
+
+=head1 LIMITATIONS
+
+Use L<EV>. The fallback module L<AnyEvent::Impl::Perl> has some issues with pipes. In some cases, L<AnyEvent::Handle> don't receive data from its pipe peer and the application will block forever. I haven't a solution yet, so don't rely on pipes when you use AE's pure-perl backend.
 
 =head1 EXPORTS
 

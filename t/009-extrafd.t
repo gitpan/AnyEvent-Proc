@@ -4,14 +4,25 @@ use Test::Most;
 use AnyEvent;
 use AnyEvent::Proc;
 use IO::Pipe;
+use Env::Path;
 
-plan tests => 7;
+BEGIN {
+    delete @ENV{qw{ LANG LANGUAGE }};
+    $ENV{LC_ALL} = 'C';
+}
+
+if ( AnyEvent::detect eq 'AnyEvent::Impl::Perl' ) {
+    plan skip_all => "pipes are broken with AE's pure-perl implementation";
+}
+else {
+    plan tests => 7;
+}
 
 my ( $proc, $out, $err );
 
 SKIP: {
-    my $bin = '/bin/sh';
-    skip "executable $bin not available", 6 unless -x $bin;
+    my ($bin) = Env::Path->PATH->Whence('sh');
+    skip "test, reason: executable 'sh' not available", 7 unless $bin;
 
     my $h1    = AnyEvent::Proc::reader();
     my $h1out = '';

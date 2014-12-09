@@ -2,6 +2,12 @@
 
 use Test::Most;
 use AnyEvent::Proc;
+use Env::Path;
+
+BEGIN {
+    delete @ENV{qw{ LANG LANGUAGE }};
+    $ENV{LC_ALL} = 'C';
+}
 
 plan tests => 4;
 
@@ -10,8 +16,8 @@ my $proc;
 my $on_ttl = sub { fail('ttl exceeded') };
 
 SKIP: {
-    my $bin = '/bin/cat';
-    skip "executable $bin not available", 4 unless -x $bin;
+    my ($bin) = Env::Path->PATH->Whence('cat');
+    skip "test, reason: executable 'cat' not available", 4 unless $bin;
 
     $proc = AnyEvent::Proc->new(
         bin           => $bin,

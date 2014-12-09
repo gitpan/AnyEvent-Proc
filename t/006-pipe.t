@@ -4,6 +4,12 @@ use Test::Most;
 use AnyEvent;
 use AnyEvent::Proc;
 use IO::Pipe;
+use Env::Path;
+
+BEGIN {
+    delete @ENV{qw{ LANG LANGUAGE }};
+    $ENV{LC_ALL} = 'C';
+}
 
 sub sync_read {
     my $h   = shift;
@@ -29,15 +35,20 @@ sub sync_read {
     $cv;
 }
 
-plan tests => 6;
+if ( AnyEvent::detect eq 'AnyEvent::Impl::Perl' ) {
+    plan skip_all => "pipes are broken with AE's pure-perl implementation";
+}
+else {
+    plan tests => 6;
+}
 
 my ( $proc, $R, $W, $cv );
 
 SKIP: {
-    my $bin = '/bin/cat';
-    skip "executable $bin not available", 6 unless -x $bin;
+    my ($bin) = Env::Path->PATH->Whence('cat');
+    skip "test, reason: executable 'cat' not available", 6 unless $bin;
 
-    ( $R, $W ) = AnyEvent::Proc::_wpipe( sub { } );
+    ( $R, $W ) = AnyEvent::Proc::_wpipe;
     $cv = sync_read($R);
 
     $proc = AnyEvent::Proc->new( bin => $bin, ttl => 5 );
@@ -48,7 +59,7 @@ SKIP: {
     close $W;
     like $cv->recv => qr{^$$\s*$}, 'rbuf contains my pid';
 
-    ( $R, $W ) = AnyEvent::Proc::_rpipe( sub { } );
+    ( $R, $W ) = AnyEvent::Proc::_rpipe;
 
     $proc = AnyEvent::Proc->new( bin => $bin, ttl => 5 );
     $proc->pipe($W);

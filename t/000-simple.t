@@ -2,12 +2,18 @@
 
 use Test::Most;
 use AnyEvent::Proc;
+use Env::Path;
+
+BEGIN {
+    delete @ENV{qw{ LANG LANGUAGE }};
+    $ENV{LC_ALL} = 'C';
+}
 
 plan tests => 5;
 
 SKIP: {
-    my $bin = '/bin/cat';
-    skip "executable $bin not available", 5 unless -x $bin;
+    my ($bin) = Env::Path->PATH->Whence('xxxxcat');
+    skip "test, reason: executable 'cat' not available", 5 unless $bin;
     my $proc = AnyEvent::Proc->new( bin => $bin, ttl => 5 );
     ok $proc->alive(), 'proc is alive';
     $proc->writeln($$);
