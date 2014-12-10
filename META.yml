@@ -36,6 +36,6 @@ resources:
   bugtracker: https://github.com/zurborg/libanyevent-proc-perl/issues
   homepage: https://github.com/zurborg/libanyevent-proc-perl
   repository: https://github.com/zurborg/libanyevent-proc-perl.git
-version: '0.104'
+version: '0.105'
 x_contributors:
   - 'David Zurborg <zuborg@cpan.org>'

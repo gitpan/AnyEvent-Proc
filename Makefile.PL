@@ -40,7 +40,7 @@ my %WriteMakefileArgs = (
     "IO::Pipe" => 0,
     "Test::Most" => 0
   },
-  "VERSION" => "0.104",
+  "VERSION" => "0.105",
   "test" => {
     "TESTS" => "t/*.t"
   }

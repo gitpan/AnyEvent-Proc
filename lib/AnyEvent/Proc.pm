@@ -14,7 +14,7 @@ use Exporter qw(import);
 use Carp;
 use POSIX;
 
-our $VERSION = '0.104';    # VERSION
+our $VERSION = '0.105';    # VERSION
 
 our @EXPORT_OK = qw(run run_cb reader writer);
 
@@ -27,6 +27,7 @@ sub _rpipe {
             on_error => sub {
                 my ( $handle, $fatal, $message ) = @_;
                 AE::log warn => "error writing to handle: $message";
+                $handle->destroy;
             },
         ),
     );
@@ -39,7 +40,9 @@ sub _wpipe {
             fh       => $R,
             on_error => sub {
                 my ( $handle, $fatal, $message ) = @_;
-                AE::log warn => "error reading from handle: $message";
+                AE::log warn => "error reading from handle: $message"
+                  unless $message =~ m{unexpected end-of-file}i;
+                $handle->destroy;
             },
         ),
         $W,
@@ -566,6 +569,7 @@ sub pipe {
         $aeh->on_eof(
             sub {
                 AE::log debug => "eof: $what";
+                shift->destroy;
                 $self->{waiter}->end;
             }
         );
@@ -591,6 +595,7 @@ sub pull {
             $peer->on_eof(
                 sub {
                     AE::log debug => "pull($peer)->on_eof";
+                    shift->destroy;
                     $self->finish;
                 }
             );
@@ -648,7 +653,7 @@ sub _push_read {
         $ok = 1;
     }
     catch {
-        AE::log warn => "cannot push_read from std$what: $_";
+        AE::log note => "cannot push_read from std$what: $_";
     };
     $ok;
 }
@@ -661,7 +666,7 @@ sub _unshift_read {
         $ok = 1;
     }
     catch {
-        AE::log warn => "cannot unshift_read from std$what: $_";
+        AE::log note => "cannot unshift_read from std$what: $_";
     };
     $ok;
 }
@@ -933,7 +938,7 @@ sub write {
         $ok = 1;
     }
     catch {
-        AE::log warn => $_;
+        AE::log note => $_;
     };
     $ok;
 }
@@ -980,7 +985,7 @@ AnyEvent::Proc - Run external commands
 
 =head1 VERSION
 
-version 0.104
+version 0.105
 
 =head1 SYNOPSIS
 
